@@ -1,0 +1,60 @@
+# CaféFlow backend configuration.
+# All environment-specific values come from environment variables (MASTER_SPEC section 43).
+# Required variables have NO default on purpose: the application must fail fast rather than
+# start with an implicit/insecure value.
+
+spring:
+  application:
+    name: cafeflow-backend
+
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway owns the schema. Hibernate only validates that entities match it.
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      url: ${REDIS_URL}
+
+server:
+  port: 8080
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-exception: false
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Everything else under /actuator stays disabled and is denied by SecurityConfig anyway.
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          # Ready only when PostgreSQL and Redis are reachable.
+          include: readinessState,db,redis
+
+logging:
+  structured:
+    format:
+      # JSON logs (Elastic Common Schema). Includes MDC fields such as requestId.
+      console: ecs
