@@ -1,0 +1,3 @@
+ignored:
+  # HEALTHCHECK CMD must use shell form here (pipes / || exit 1); the rule targets ENTRYPOINT/CMD.
+  - DL3025

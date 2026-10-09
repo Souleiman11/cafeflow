@@ -1,0 +1,45 @@
+# Secrets - NEVER commit (see docs/security/README.md)
+.env
+.env.*
+!.env.example
+secrets.yaml
+**/secrets.yaml
+*.pem
+*.key
+*.tfvars.secret
+*.auto.tfvars
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Backend (Maven)
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/*.log
+HELP.md
+
+# Frontend (Angular / Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+frontend/.vite/
+
+# ML service (Python)
+ml-service/.venv/
+ml-service/__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+ml-service/.coverage
+
+# Terraform / OpenTofu
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+.terraform.lock.hcl.bak
