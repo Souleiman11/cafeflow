@@ -1,0 +1,57 @@
+# Rendered at container start by the nginx image's envsubst step.
+# Required env: BACKEND_URL (e.g. http://backend:8080)
+
+server {
+    listen 8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+
+    # Security headers (tighten CSP as the UI grows).
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'" always;
+
+    # Container health check (does not touch the backend).
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Versioned REST API -> Spring Boot backend.
+    location /api/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Only the health probes are proxied - never the rest of /actuator.
+    location /actuator/health/ {
+        proxy_pass ${BACKEND_URL};
+        proxy_set_header Host $host;
+    }
+
+    # Fingerprinted build assets can be cached aggressively.
+    location ~* \.(?:js|css|woff2?|ico|svg|png|jpg|jpeg|webp)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files $uri =404;
+    }
+
+    # SPA fallback.
+    location / {
+        add_header Cache-Control "no-store";
+        add_header Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        try_files $uri $uri/ /index.html;
+    }
+}

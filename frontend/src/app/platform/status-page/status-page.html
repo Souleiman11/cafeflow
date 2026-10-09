@@ -1,0 +1,30 @@
+<main class="status">
+  <h1>CaféFlow</h1>
+  <p class="tagline">Café operations platform</p>
+
+  <section class="panel" aria-labelledby="backend-heading">
+    <h2 id="backend-heading">Backend</h2>
+
+    <p class="result" role="status" aria-live="polite">
+      @switch (status()) {
+        @case ('CHECKING') {
+          <span class="dot dot--pending" aria-hidden="true"></span> Checking…
+        }
+        @case ('UP') {
+          <span class="dot dot--up" aria-hidden="true"></span> Ready
+        }
+        @case ('DOWN') {
+          <span class="dot dot--down" aria-hidden="true"></span> Running, but a dependency is not
+          ready
+        }
+        @default {
+          <span class="dot dot--down" aria-hidden="true"></span> Cannot reach the backend
+        }
+      }
+    </p>
+
+    <button type="button" (click)="refresh()" [disabled]="status() === 'CHECKING'">
+      Check again
+    </button>
+  </section>
+</main>
