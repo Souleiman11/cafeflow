@@ -1,0 +1,16 @@
+# Apply with: kubectl apply -k infrastructure/kubernetes
+# The Secret (`cafeflow-secrets`) is intentionally NOT listed: create it out-of-band
+# (see secrets.example.yaml). Set the real registry/tag in a per-environment overlay via `images:`.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cafeflow-production
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - ml/deployment.yaml
+  - ml/service.yaml
+  - ingress.yaml

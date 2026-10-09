@@ -1,0 +1,81 @@
+# CaféFlow local development stack.
+#   docker compose up --build
+# DEVELOPMENT ONLY: defaults below are for a developer machine. Override via .env (see .env.example).
+# All published ports are bound to 127.0.0.1.
+
+name: cafeflow
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cafeflow}
+      POSTGRES_USER: ${POSTGRES_USER:-cafeflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cafeflow_dev_only}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_dev_only}
+    # Redis is a cache / temporary-state store only; nothing here is a source of truth.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --save '' --appendonly no"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  ml-service:
+    build:
+      context: ./ml-service
+    environment:
+      APP_ENV: development
+    ports:
+      - "127.0.0.1:${ML_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cafeflow}
+      DATABASE_USERNAME: ${POSTGRES_USER:-cafeflow}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-cafeflow_dev_only}
+      # Passwords containing URL-reserved characters must be percent-encoded here.
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_only}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-4200}:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

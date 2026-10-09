@@ -1,0 +1,12 @@
+# Non-secret configuration only. Credentials live in the `cafeflow-secrets` Secret.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cafeflow-config
+  labels:
+    app.kubernetes.io/part-of: cafeflow
+data:
+  APP_ENV: production
+  # Managed PostgreSQL endpoint (the database is NOT run inside this cluster). Replace per environment.
+  DATABASE_URL: jdbc:postgresql://postgres.managed.example.internal:5432/cafeflow
+  BACKEND_URL: http://backend:8080
