@@ -14,3 +14,8 @@
 
 Mandatory security tests (spec section 46) are introduced as their features land; the
 deny-by-default and error-leak tests exist now.
+
+## Dependency hygiene
+- Python runtime dependencies are pinned exactly (including transitive) and audited with `pip-audit` in CI.
+- Frontend: `npm ci` from the lockfile; `npm audit --audit-level=high` in CI.
+- Java dependencies are managed by the Spring Boot BOM; audit them with the CI `security-scan` job once the build can resolve them.

@@ -53,6 +53,8 @@ jobs:
         run: npm test -- --watch=false
       - name: Build
         run: npm run build
+      - name: Dependency vulnerability audit
+        run: npm audit --audit-level=high
 
   ml-service:
     runs-on: ubuntu-latest
@@ -71,6 +73,8 @@ jobs:
         run: ruff check . && ruff format --check .
       - name: Tests
         run: pytest
+      - name: Dependency vulnerability audit
+        run: pip install pip-audit && pip-audit -r requirements.txt --disable-pip --no-deps
 
   infrastructure:
     runs-on: ubuntu-latest
