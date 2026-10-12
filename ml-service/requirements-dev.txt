@@ -1,4 +1,6 @@
+# Test/lint tooling on top of the runtime pins.
+# httpx2 replaces httpx: Starlette's TestClient deprecated httpx (last release Dec 2024); httpx2 is maintained (github.com/pydantic/httpx2).
 -r requirements.txt
-httpx==0.28.1
 pytest==9.1.1
-ruff==0.17.0
+httpx2==2.13.1
+ruff==0.16.9

@@ -101,6 +101,39 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 300
       - name: Smoke test (service-to-service communication)
         run: scripts/smoke-test.sh
+      # Compose names built images <project>-<service>; fail clearly if that ever changes.
+      - name: Confirm all three images were built
+        run: |
+          for image in cafeflow-backend cafeflow-frontend cafeflow-ml-service; do
+            docker image inspect "$image" > /dev/null
+          done
+      - name: Trivy image scan (backend)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: cafeflow-backend
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Trivy image scan (frontend)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: cafeflow-frontend
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Trivy image scan (ml-service)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: cafeflow-ml-service
+          scanners: vuln,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
       - name: Dump logs on failure
         if: failure()
         run: docker compose logs --no-color
@@ -112,11 +145,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Third-party action pinned to an immutable commit (tag v0.36.0).
       - name: Trivy filesystem scan (dependencies, secrets, IaC misconfiguration)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scanners: vuln,secret,misconfig
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
           exit-code: "1"

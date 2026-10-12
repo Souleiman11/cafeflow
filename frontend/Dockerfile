@@ -7,7 +7,7 @@ COPY . .
 RUN npm run build
 
 # Non-root nginx (listens on 8080). Templates in /etc/nginx/templates are rendered with envsubst.
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:stable-alpine AS runtime
 ENV BACKEND_URL=http://backend:8080
 COPY --from=build /app/dist/frontend/browser /usr/share/nginx/html
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template

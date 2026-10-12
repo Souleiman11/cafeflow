@@ -1,0 +1,13 @@
+# Time-boxed risk acceptances for the Trivy gate in .github/workflows/ci.yml.
+# Every entry needs a reason and an expiry; once expired the finding fails CI again.
+misconfigurations:
+  - id: KSV-0014
+    paths:
+      - infrastructure/kubernetes/frontend/deployment.yaml
+    statement: >-
+      Frontend pod root filesystem is writable. The nginx-unprivileged entrypoint renders the
+      server config into /etc/nginx/conf.d at start-up and, if that directory is not writable,
+      only logs an error and starts with the default config (no proxy). A read-only root needs
+      emptyDir mounts for /etc/nginx/conf.d and /tmp plus verified log handling, which cannot be
+      tested without running the image in a cluster. Resolve before the Phase 11 production gate.
+    expired_at: 2026-12-31

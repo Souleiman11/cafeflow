@@ -19,3 +19,5 @@ deny-by-default and error-leak tests exist now.
 - Python runtime dependencies are pinned exactly (including transitive) and audited with `pip-audit` in CI.
 - Frontend: `npm ci` from the lockfile; `npm audit --audit-level=high` in CI.
 - Java dependencies are managed by the Spring Boot BOM; audit them with the CI `security-scan` job once the build can resolve them.
+- Accepted scanner findings are recorded in `.trivyignore.yaml` with a justification and an expiry date.
+- CI Trivy-scans the repository and each built image (CRITICAL/HIGH, unfixed ignored); the Trivy action is pinned by commit SHA.

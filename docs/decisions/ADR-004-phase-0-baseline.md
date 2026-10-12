@@ -20,3 +20,9 @@
    `onboarding` from the master spec); `kitchen` is not created.
 10. **Structured JSON logging** (ECS) enabled by default; MDC carries `requestId`
     (tenant/user ids are added in Phase 1).
+11. **Base images are verified against upstream, not remembered.** `maven:3.9-*` is no longer published (use
+    `maven:3-eclipse-temurin-21`); `nginx-unprivileged:1.27` is an abandoned series (use `stable-alpine`).
+12. **Python pins** are exact (direct and transitive) and follow the Starlette version FastAPI's own CI used for that
+    release; `httpx2` replaces the unmaintained `httpx`. FastAPI and Starlette are bumped together.
+13. **Trivy** gates CRITICAL/HIGH on the repository and on each built image. Accepted findings live in
+    `.trivyignore.yaml` with a reason and an expiry date.

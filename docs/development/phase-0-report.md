@@ -1,142 +1,185 @@
-# Phase 0 Verification and Hardening Report
+# Phase 0 Verification Report
 
-**Phase:** 0 - Foundation  **Overall status: NOT COMPLETE - backend and Docker stack are unverified.**
-Everything that could run in the authoring sandbox was run and passes. The Spring Boot backend could
-**not** be compiled or tested, and the Docker stack could **not** be built or started. Phase 1 must not
-start until CI (`.github/workflows/ci.yml`) is green on a machine with Maven Central and Docker access.
+**Overall status: PHASE 0 IS NOT COMPLETE.** Everything that can run in the authoring sandbox passes, but the
+Spring Boot backend has **never been built by Maven or tested**, and the Docker stack has **never been built or
+started**. Phase 0 closes only when the CI jobs listed under "Exit criteria" are green. Phase 1 has not been started.
 
-Legend: **PASS** = executed successfully here. **FAIL** = executed and failed. **NOT RUN** = could not be
-executed here (reason given). Nothing below is marked PASS unless the command ran and succeeded.
+Date of verification: 2026-10-10. Legend: **PASS** = executed here and succeeded. **FAIL** = executed and failed.
+**BLOCKED** = cannot be executed in this environment (reason given). Nothing is marked PASS unless it ran.
 
-## Correction to the previous report
-The earlier report said the backend was "syntax-checked with javac with no errors". **That was wrong:**
-`javac` was not installed, the command failed with "not found", and my filter hid the message. The probe
-has now been run properly (JDK 21.0.12, see item 2). Also, the earlier secret scan used `git grep` before
-anything was committed, so it was vacuous; it has been replaced with gitleaks (item 9).
+## 1. Corrections to earlier reports
+- Report v1 claimed a `javac` syntax check found no errors. **False:** `javac` was not installed and my filter hid the
+  failure. Fixed and disclosed in v2.
+- During this pass the same class of mistake nearly happened again: a source-level `javac` run printed "0 errors" because
+  the `time` command did not exist in this shell, so `javac` never ran. It was caught because no `.class` files existed.
+  The probe now checks the exit code, the amount of output, class output, and a **negative control** (section 4).
+- v2 pinned FastAPI 0.143.0 and Starlette 1.7.0 because they were the newest. That was imprudent (see section 2).
 
-## Environment constraints (why items are NOT RUN)
-| Constraint | Evidence |
+## 2. Python dependencies - PASS (re-selected)
+**Compatibility audit (from the packages' declared metadata and the FastAPI project's own history):**
+- FastAPI 0.142.2 declares `starlette>=0.46.0`, `pydantic>=2.9.0`, `typing-extensions>=4.8.0`, `typing-inspection>=0.4.2`,
+  `annotated-doc>=0.0.2` and `opentelemetry-api>=1.44.0` - lower bounds only, no upper bounds. An open range only says a version is *allowed*, not that it was *tested*.
+- FastAPI's release notes show which Starlette each series was tested with: 0.137.2-0.141.x with Starlette 1.3.1,
+  **0.142.0-0.142.2 with 1.6.0**, 0.142.3-0.143.0 with 1.7.0.
+- The pair pinned now, **FastAPI 0.142.2 + Starlette 1.6.0**, is therefore the pair FastAPI's CI used. It also contains
+  Starlette 1.5.1's `FileResponse` range-handling fixes (not used by this service) and is above every advisory
+  `pip-audit` reported for the earlier 0.46.2 pin.
+- Rejected: FastAPI 0.143.0 (1 day old; 0.142.3-0.143.0 are OpenTelemetry changes including a breaking change shipped
+  within two days) and FastAPI 0.141.1 + Starlette 1.7.0 (allowed by metadata but never tested together).
+- `httpx` (last release Dec 2024) is replaced by `httpx2` 2.13.1, which Starlette's test client now asks for and which is
+  maintained under the `pydantic` GitHub organisation.
+- Transitive packages that floated to releases only 0-8 days old were pinned to older releases that satisfy the declared ranges
+  (httptools 0.8.0, uvloop 0.22.1, websockets 17.1, python-dotenv 1.2.3, opentelemetry-api 1.45.0). FastAPI 0.142.2 itself
+  is 9 days old, a deliberate exception because compatibility with a tested Starlette pair outranks the 14-day soak rule.
+
+**Exact runtime pins tested** (`ml-service/requirements.txt`; Python 3.12.3, pip 26.2.1):
+
+| Package | Version |
 |---|---|
-| Maven Central unreachable | `curl` to repo.maven.apache.org / repo1.maven.org / Spring / Google / Gradle repos -> no connection; `mvn` reports `Unknown host repo.maven.apache.org` |
-| No Docker daemon | `dockerd` not installed, no `/var/run/docker.sock` |
-| Container registries unreachable | docker.io, ghcr.io, quay.io, mcr.microsoft.com -> no connection (base images cannot be pulled even with a daemon) |
-| npm, PyPI, GitHub releases, Ubuntu apt reachable | used for the checks that did run |
+| `annotated-doc` | 0.0.5 |
+| `annotated-types` | 0.8.0 |
+| `anyio` | 4.15.1 |
+| `click` | 8.5.0 |
+| `fastapi` | 0.142.2 |
+| `h11` | 0.16.0 |
+| `httptools` | 0.8.0 |
+| `idna` | 3.20 |
+| `opentelemetry-api` | 1.45.0 |
+| `pydantic` | 2.13.5 |
+| `pydantic_core` | 2.46.5 |
+| `python-dotenv` | 1.2.3 |
+| `PyYAML` | 6.0.3 |
+| `starlette` | 1.6.0 |
+| `typing-inspection` | 0.4.4 |
+| `typing_extensions` | 4.16.0 |
+| `uvicorn[standard]` | 0.54.0 |
+| `uvloop` | 0.22.1 |
+| `watchfiles` | 1.3.0 |
+| `websockets` | 17.1 |
 
-## Results by requested item
+Dev tooling (`requirements-dev.txt`): pytest==9.1.1, httpx2==2.13.1, ruff==0.16.9.
 
-### 1. Spring Boot and Java versions - PARTIAL
-| Item | Value | Status |
-|---|---|---|
-| Spring Boot parent | `4.1.1` (`backend/pom.xml`) | Release existence confirmed from spring.io ("Spring Boot 4.1.1 available now", 2026-08-20) |
-| Java | 21 (`java.version`, Dockerfiles `temurin 21`, CI `temurin 21`). Sandbox JDK: 21.0.12 | Declared consistently; only the JDK was executed |
-| Managed dependency versions (Spring Framework, Hibernate, Flyway, Testcontainers, ...) | **Not resolved** - Maven could not run | NOT RUN |
-| Indirect evidence | A secondary blog states Boot 4.1.1 manages Flyway 12.4.0 and Testcontainers 2.0.5. The only primary BOM I could read was **4.2.0-M2** (not 4.1.1): it lists the same artifact names I use (`spring-boot-starter-webmvc`, `-webmvc-test`, `-security-test`, `-flyway`, `-validation`, `-actuator`, `-data-jpa`, `-data-redis`, `flyway-database-postgresql`) and Testcontainers 2.0.5 | Supports, does not prove, that the coordinates are right for 4.1.1 |
-| Maven wrapper | 3.3.4 script, distribution Maven 3.9.16 (copied from an upstream project; its existence was not verified because the download is blocked) | NOT VERIFIED |
-| `testcontainers-postgresql` artifact | Assumed managed via Testcontainers BOM; not visible in the truncated BOM I read | NOT VERIFIED |
+**Results (fresh venv, installed only from the committed files):** `pip install` PASS; `pip check` PASS (no broken requirements);
+`ruff check` PASS; `ruff format --check` PASS; `pytest` PASS (**6 passed**, 1 warning); real `uvicorn` boot answered
+`/health` 200 and `/docs` 404; `pip-audit` on the pinned files PASS; `pip-audit` on the whole installed environment
+(transitive packages included) PASS (pip-audit 2.10.1).
+**New tests:** `tests/test_dependency_pins.py` (3 tests) fails if the environment drifts from `requirements.txt` or if the
+pins violate FastAPI's declared requirements. Negative controls: pinning `starlette==1.7.0` or `pydantic==2.8.0` made it fail.
+**Open warning (third-party, not hidden):** `DeprecationWarning: anyio.abc.BlockingPortal alias is deprecated`, raised at import
+time by `starlette/testclient.py:53` (Starlette 1.6.0 with AnyIO 4.15.1). It does not affect the running service. I tried
+`filterwarnings = error`, saw it fail on this warning, and reverted rather than adding an ignore filter. It disappears with
+Starlette 1.7.0; bump FastAPI and Starlette **together** once FastAPI's OpenTelemetry changes settle.
 
-Frontend (resolved by `package-lock.json`, installed with `npm ci`): Angular 22.2.x, TypeScript 6.0.x,
-Vitest 5, jsdom 30, angular-eslint 22.5.0. Node >= 22.22.3 is required by the Angular 22 CLI.
+## 3. Frontend - PASS
+@angular/core 22.2.1, @angular/cli 22.2.2, typescript 6.0.3, vitest 5.0.3, jsdom 30.1.2, angular-eslint 22.5.0, rxjs 7.8.2; Node v22.23.3. `npm ci` PASS; `ng lint` PASS; `ng test` PASS (**7/7**); `ng build` (production) PASS;
+`npm audit --audit-level=high` PASS (0 vulnerabilities). nginx config was exercised with a real nginx (SPA fallback, `/api/` and
+readiness proxied, other `/actuator/*` not proxied, CSP and security headers present); not re-run against the final base image.
 
-### 2. Backend compile and Maven tests - NOT RUN (blocked)
-- `./mvnw -B test` -> **FAIL (environment):** `wget: Failed to fetch https://repo.maven.apache.org/.../apache-maven-3.9.16-bin.zip`.
-- apt Maven 3.8.7: `pom.xml` **parsed successfully** (well-formed), then failed with
-  `Non-resolvable parent POM ... spring-boot-starter-parent:pom:4.1.1 ... Unknown host repo.maven.apache.org`.
-- `javac` 21 over all 25 sources without Spring on the classpath: 312 errors, of which 196 "cannot find symbol",
-  97 "package does not exist", 16 "static import only from classes and interfaces" and 3 "method does not
-  override" - **all consequences of unresolved Spring types** (the 3 override errors are
-  `RequestIdFilter`, `RestAuthenticationEntryPoint`, `RestAccessDeniedHandler`, whose supertypes are unresolved).
-  **No syntax errors were found, but this says nothing about API correctness.** The backend is
-  **uncompiled and untested**.
-- Nothing was changed in the backend in this pass, because no actual failure could be observed.
+## 4. Spring Boot backend - NOT BUILT (blocked) / reviewed against upstream source
+**Blocked:** Maven Central is unreachable (`./mvnw` cannot download Maven; apt Maven 3.8.7 parses `pom.xml` and then fails with
+`Unknown host repo.maven.apache.org`). **No Maven build, no unit test and no integration test has run. I do not claim the backend compiles.**
 
-First things to check when CI runs, in order of my own uncertainty: (1) `org.testcontainers.postgresql.PostgreSQLContainer`
-and `GenericContainer` packages under Testcontainers 2.x; (2) `NoResourceFoundException` /
-`NoHandlerFoundException` imports in `GlobalExceptionHandler`; (3) the `handlerExceptionResolver` bean qualifier
-in the two security handlers; (4) `SecurityBaselineTest.healthProbesArePublic` assumes an unmapped path returns 404;
-(5) `FoundationIT` expects `local.server.port` and ECS structured logging to work with Boot 4.1.
+**Review evidence (cloned and read at the exact release tags):**
+| Check | Result |
+|---|---|
+| Boot `4.1.1` tag exists; managed versions read from its BOM source | Spring Framework **7.0.9**, Spring Security **7.1.1**, Flyway **12.4.0**, Hibernate **7.4.5**, Testcontainers **2.0.5**, JUnit Jupiter **6.0.3**, Jackson **3.1.5**, Tomcat 11.0.24 |
+| Every starter in `pom.xml` exists in 4.1.1 | webmvc, validation, security, actuator, data-jpa, flyway, data-redis, test, webmvc-test, security-test: all present |
+| `flyway-database-postgresql` managed by the BOM; `maven-failsafe-plugin` configured by `starter-parent` | confirmed |
+| All **57** distinct Spring / Testcontainers imports in main and test code | all 57 resolve to real classes in the exact sources (incl. `org.testcontainers.postgresql.PostgreSQLContainer`, `NoResourceFoundException`) |
+| Signatures: `AuthenticationEntryPoint.commence`, `AccessDeniedHandler.handle`, `AbstractHttpConfigurer.disable()`, `HttpSecurity` customizer methods, `requestMatchers(String...)`, `SecurityMockMvcRequestPostProcessors.user`, `springSecurity()`, `PostgreSQLContainer(String)` (non-generic), `GenericContainer`, `getMappedPort` | confirmed |
+| Behaviour: `DispatcherServlet` 7.0.9 always throws `NoHandlerFoundException` for unmapped paths (so the 404 test expectation and the handler mapping are right); `handlerExceptionResolver` bean name; health ids `db` and `redis`; `local.server.port`; `ecs` structured-log format; property prefixes `spring.data.redis`, `spring.flyway` | confirmed |
+| Dockerfile layered-jar step (`-Djarmode=tools ... extract --layers --destination`, four layer directories) | identical to the official Boot 4.1.1 documentation example |
+| **`javac` 21 on all 25 of my files with the real Framework, Security, Boot and Testcontainers sources on `-sourcepath`** (full attribution) | **0 errors reported in my files.** About 2,600 errors appear inside upstream sources (optional modules such as OAuth2 are not on the path); none are in `backend/src` |
+| Negative control for the probe | 3 deliberately injected mistakes (a typo'd `HttpSecurity` method, `BindingResult` method and Testcontainers method reference) were all detected |
 
-### 3. PostgreSQL, Flyway, Redis startup configuration - PARTIAL
-Run against real servers started with the same settings as `docker-compose.yml` (PostgreSQL **16.15**,
-Redis **7.0.15** from apt; compose pins PostgreSQL 17 / Redis 7):
-- PASS: `pg_isready -U cafeflow -d cafeflow` (the compose healthcheck command) reports accepting connections.
-- PASS: SCRAM password auth works with the configured credentials; a wrong password is rejected;
-  the app role can create/drop tables in `public` (what Flyway needs).
-- PASS: Redis started with the compose command (`--requirepass`, `--save ''`, `--appendonly no`); healthcheck
-  `REDISCLI_AUTH=... redis-cli ping` returns PONG; no password -> `NOAUTH`; wrong password -> `WRONGPASS`;
-  persistence confirmed off.
-- PASS: the URL shape used for `REDIS_URL` (`redis://:<password>@host:port`) authenticates with a real client;
-  the same URL without a password is rejected.
-- PASS (static): `application.yml` parses; the four variables with no default (`DATABASE_URL`, `DATABASE_USERNAME`,
-  `DATABASE_PASSWORD`, `REDIS_URL`) are all supplied by compose, by the Kubernetes ConfigMap + Secret template,
-  and by `FoundationIT`; readiness group is `readinessState,db,redis`.
-- **NOT RUN:** Flyway itself, the JDBC driver, Spring property binding, Hikari/Lettuce, and the actuator
-  readiness group - they require the Spring application. Phase 0 has intentionally no migration, so Flyway
-  will find an empty `db/migration` folder; this behaviour is unverified.
+**Limits of that evidence:** it is a type-check against sources, not a Maven build; support libraries were older than the real ones
+(servlet 6.0, JUnit 5.10, AssertJ 3.14, SLF4J 1.7); nothing was executed, so Spring wiring, Jackson 3 serialization of `ApiError`,
+Security in a plain Spring context, Flyway on an empty migration folder, Hibernate with zero entities, Lettuce and Testcontainers at
+runtime are all **untested**.
 
-### 4. Frontend - PASS
-`npm ci` (clean install) PASS; `ng lint` PASS; `ng test` PASS (3 files, **7/7 tests**); `ng build` (production) PASS;
-built `index.html` contains no inline script/style (required by the nginx CSP); `npm audit`: 0 vulnerabilities.
-nginx config (rendered like the image does) was exercised earlier with `nginx -t` and live requests: SPA fallback,
-`/api/` and readiness proxied, other `/actuator/*` not proxied, security headers incl. CSP present.
+## 5. PostgreSQL / Redis configuration - PASS (partial)
+Real servers (PostgreSQL 16.15 and Redis 7.0.15 from apt; compose uses PostgreSQL 17 and Redis 7.4.11): healthcheck commands,
+password authentication (accepted / rejected), DDL rights in `public`, `redis://:<pw>@host:port` URL, persistence off.
+**Not executed:** Flyway, the JDBC driver, Spring property binding, actuator readiness.
 
-### 5. ML service - PASS (after a fix)
-`ruff check` PASS, `ruff format --check` PASS, `pytest` PASS (**3/3**), real uvicorn boot -> `/health` HTTP 200.
-**Finding and fix:** the original pins (`fastapi 0.115.12`, written from memory) pulled `starlette 0.46.2`,
-which `pip-audit` showed has about eight known advisories (fixes up to 1.3.1). `requirements.txt` now pins the
-full resolved runtime set (fastapi 0.143.0, starlette 1.7.0, uvicorn 0.54.0, pydantic 2.14.0, ...), the dev file
-pins pytest 9.1.1 / httpx 0.28.1 / ruff 0.17.0. `pip-audit` on runtime pins, dev pins and the whole installed
-environment: **no known vulnerabilities**. No test was modified. One new `StarletteDeprecationWarning`
-(test client will require `httpx2` in future) is left as is.
+## 6. Docker Compose and images
+- PASS: `docker compose config` (Docker Compose version v5.6.0); `hadolint` on all three Dockerfiles (Haskell Dockerfile Linter 2.15.1).
+- **BLOCKED:** `docker compose build/up`, the health-gated start, `scripts/smoke-test.sh` against a live stack, and image
+  scanning. Reason: no Docker daemon, and docker.io / ghcr.io / quay.io / mcr.microsoft.com are unreachable.
+- **Base-image tags checked against `docker-library/official-images` and the nginx-unprivileged workflows:**
+  `postgres:17-alpine`, `redis:7-alpine` (= 7.4.11), `node:22-alpine`, `python:3.12-slim`, `eclipse-temurin:21-jre-alpine` exist.
+  **Two defects were found and fixed:** `maven:3.9-eclipse-temurin-21` is no longer published (official image is now Maven 3.10,
+  tag `3-eclipse-temurin-21`); `nginx-unprivileged:1.27-alpine` is an abandoned series (only the current stable and mainline lines
+  are rebuilt), now `stable-alpine`. The Maven wrapper's 3.9.16 does exist (Apache tag `maven-3.9.16`); the image builds with Maven 3.10, a minor difference.
 
-### 6. Docker Compose - PARTIAL
-- PASS: `docker compose config` (Compose v5.6.0 standalone binary) validates the file.
-- PASS: all three Dockerfiles pass `hadolint` (DL3025 suppressed on HEALTHCHECK lines only, with a reason).
-- **NOT RUN:** `docker compose build`, `up`, health-gated startup, `scripts/smoke-test.sh` against a live stack
-  (only its syntax was checked with `sh -n`). Reason: no daemon and no registry access.
-  Unverified as a result: all three image builds, the `jarmode=tools extract` step in the backend image,
-  that the base-image tags exist (`postgres:17-alpine`, `redis:7-alpine`, `nginxinc/nginx-unprivileged:1.27-alpine`,
-  `eclipse-temurin:21-jre-alpine`, `maven:3.9-eclipse-temurin-21`, `node:22-alpine`, `python:3.12-slim`),
-  and service-to-service networking. The CI job `docker-and-smoke` runs exactly this.
+## 7. CI workflow - reviewed, not yet executed
+Confirmed from the workflow: `backend` runs `./mvnw -B test` then `./mvnw -B verify` (unit tests, then Testcontainers ITs and
+packaging); `docker-and-smoke` runs `docker compose up -d --build --wait`, which **builds all three images** (backend, frontend,
+ml-service), starts the stack, then runs `scripts/smoke-test.sh`; it now also checks that all three images exist and **Trivy-scans each**
+(CRITICAL/HIGH, fail on findings). The `infrastructure` job validates configuration only, by design. `actionlint`: PASS.
+**Defect found and fixed:** `aquasecurity/trivy-action@0.28.0` does not exist (tags are `v0.x.y`), so `security-scan` would have failed
+immediately. It is now pinned to the commit of `v0.36.0` (`ed142fd...`), with its inputs checked against that version's `action.yaml`.
+Other actions exist at the pinned majors (checkout v4, setup-java v4, setup-node v4, setup-python v5, setup-terraform v3) but newer
+majors exist; they were not bumped because they cannot be tested here.
 
-### 7/8. Kubernetes and Terraform - PASS
-`kustomize build` PASS; `kubeconform -strict` against Kubernetes 1.31: **10 resources valid, 0 invalid** (9 rendered + the
-Secret template); OpenTofu 1.13.1 `fmt -check`, `init -backend=false`, `validate` PASS; `actionlint` on CI PASS.
-Not run: `kubectl apply --dry-run` (no cluster/kubectl), `terraform` binary itself (OpenTofu used).
-Trivy misconfiguration scan (offline checks; vulnerability DB unreachable):
-| ID | Severity | Where | Disposition |
-|---|---|---|---|
-| DS-0002 root user | HIGH | frontend Dockerfile | **Fixed:** explicit `USER 101` (base image already ran as 101); rescan clean |
-| KSV-0014 root FS writable | HIGH | frontend Deployment | **Open, deliberate:** nginx renders its config at start-up. Making it read-only needs emptyDir mounts that I cannot test without running the image |
-| KSV-0125 untrusted registry | MEDIUM | all Deployments | **Open:** placeholder image names; set in Phase 11 |
-| KSV-0011 no CPU limit | LOW | all | **Open, deliberate** (memory limits set; CPU limits can throttle JVMs) |
-| KSV-0020/21 UID/GID <= 10000 | LOW | frontend | **Open:** nginx-unprivileged uses 101 |
-Backend and ML pods: no findings beyond the above. docker-compose.yml, backend/ML Dockerfiles, Terraform: no findings.
+## 8. Kubernetes, Terraform, secrets - PASS
+`kustomize build` (v5.8.3) PASS; `kubeconform -strict` (v0.8.0, Kubernetes 1.31): 10 resources valid, 0 invalid; OpenTofu
+v1.13.1 `fmt -check`, `init -backend=false`, `validate` PASS; gitleaks 8.30.1: no leaks in history or working tree.
+Trivy 0.75.0 misconfiguration scan, CRITICAL/HIGH: one finding, **KSV-0014 (frontend pod root filesystem writable)**.
+Upstream source shows why it is not a one-line fix: if `/etc/nginx/conf.d` is not writable the entrypoint only logs an error and nginx starts
+**without the proxy config**. It is recorded in `.trivyignore.yaml` with a statement and an **expiry of 2026-12-31**; the file hides only
+that finding on that path (verified).
 
-### 9. Hardcoded credentials and secrets - PASS with notes
-- gitleaks 8.30.1: **0 leaks** across all 7 commits (git history) and the working tree.
-- Trivy secret scanner: none.
-- `application.yml` has **no** default for any credential (fails fast if unset).
-- Kubernetes: `secrets.example.yaml` contains only `REPLACE_ME`; `secrets.yaml`, `.env` are git-ignored
-  (`git check-ignore` confirmed).
-- **Note (by design, not a leak):** `docker-compose.yml` and `.env.example` contain development-only default
-  passwords (`cafeflow_dev_only`, `redis_dev_only`) so `docker compose up` works unconfigured; ports are bound to
-  127.0.0.1. These values must never be reused outside a developer machine.
-- Dependency vulnerabilities: npm 0, Python 0 (after fix). **Java dependencies not audited** (cannot resolve them);
-  Trivy's vulnerability database was unreachable, so image/OS CVEs were not scanned. CI's `security-scan` job will.
+## 9. Failed checks
+No executed check is currently failing. Defects found by this review and fixed: vulnerable and unsuitable Python pins, unmaintained test
+client dependency, unpublished Maven image tag, abandoned nginx series, nonexistent Trivy action version. The only command that failed when
+run was `./mvnw -B test`, and it failed because the environment cannot reach Maven Central, not because of project code.
 
-## Changes made in this pass
-1. `ml-service/requirements.txt`, `requirements-dev.txt`: exact, audited pins (fixes known-vulnerable Starlette).
-2. `frontend/Dockerfile`: explicit `USER 101`.
-3. `.github/workflows/ci.yml`: `pip-audit` step (ml-service) and `npm audit --audit-level=high` step (frontend).
-4. This report. **No tests were weakened or removed; no functionality was removed; no Phase 1 work was done.**
+## 10. Checks blocked by the environment
+Maven build and tests (including `FoundationIT`); Docker image builds; `docker compose up` and `scripts/smoke-test.sh`; Trivy vulnerability
+database and image scans; Java dependency vulnerability audit; `kubectl` dry-run; the CI workflow itself.
 
-## Remaining limitations (blocking Phase 1 sign-off)
-1. Backend never compiled or tested (Boot 4.1.1 + Testcontainers 2.x coordinates/APIs unverified).
-2. Docker images never built; compose stack never started; smoke test never run against a live stack.
-3. Java dependency tree and container-image CVEs never scanned.
-4. Open hardening items in the table above (frontend root filesystem, placeholder registry, CPU limits).
-5. `trivy-action@0.28.0` pin and the base-image tags should be reviewed against current releases.
+## 11. Remaining risks
+1. Backend unbuilt and untested; runtime behaviour of Boot 4.1.1 wiring is unverified (section 4).
+2. Images never built; `stable-alpine` and `maven:3-eclipse-temurin-21` float, so builds are not bit-reproducible.
+3. KSV-0014 open until 2026-12-31; LOW/MEDIUM Trivy items remain (placeholder registry, no CPU limits, nginx UID 101).
+4. CI image and filesystem scans may fail on newly published CVEs in base images; that is the gate working.
+5. GitHub Action majors are not the latest; Starlette test-client deprecation warning; FastAPI 0.142.2 is 9 days old.
+6. The Python pins were chosen from evidence at one point in time; FastAPI and Starlette move quickly and must be re-audited on every bump.
 
-## Exit criteria to close Phase 0
-CI green on: `backend` (`./mvnw verify` incl. `FoundationIT`), `docker-and-smoke`, `security-scan`, and the
-unchanged frontend / ml-service / infrastructure jobs. Then update this report with those results.
+## 12. Exact commands for local verification
+Run from the repository root on a machine with internet access and Docker.
+```bash
+# Backend (Java 21, Docker running for the integration tests)
+cd backend && ./mvnw -B test              # unit tests: SecurityBaselineTest, GlobalExceptionHandlerTest, RequestIdFilterTest
+cd backend && ./mvnw -B verify            # + FoundationIT (Testcontainers PostgreSQL 17 + Redis 7) and packaging
+cd backend && ./mvnw -B dependency:tree   # record the exact resolved Java versions, then paste them into this report
+
+# Frontend (Node >= 22.22.3)
+cd frontend && npm ci && npm run lint && npm test -- --watch=false && npm run build && npm audit --audit-level=high
+
+# ML service (Python 3.12)
+cd ml-service && python3 -m venv .venv && . .venv/bin/activate \
+  && pip install -r requirements-dev.txt && pip check && ruff check . && ruff format --check . && pytest \
+  && pip install pip-audit && pip-audit -r requirements.txt --disable-pip --no-deps
+
+# Whole stack
+docker compose config --quiet && docker compose up -d --build --wait --wait-timeout 300 && scripts/smoke-test.sh
+for i in backend frontend ml-service; do trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 cafeflow-$i; done
+docker compose down -v
+
+# Infrastructure and repository hygiene
+kubectl kustomize infrastructure/kubernetes > /tmp/rendered.yaml && kubeconform -strict -kubernetes-version 1.31.0 -summary /tmp/rendered.yaml
+(cd infrastructure/terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate)
+actionlint .github/workflows/ci.yml && hadolint --config .hadolint.yaml backend/Dockerfile frontend/Dockerfile ml-service/Dockerfile
+trivy fs --scanners vuln,secret,misconfig --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .trivyignore.yaml .
+gitleaks git . && gitleaks dir .
+```
+
+## 13. Tools used in this environment
+javac 21.0.12.1 (JDK only, no Maven), Node v22.23.3, Docker Compose version v5.6.0, kustomize v5.8.3, kubeconform v0.8.0, OpenTofu v1.13.1,
+actionlint 1.7.12, Haskell Dockerfile Linter 2.15.1, gitleaks 8.30.1, Version: 0.75.0, pip-audit 2.10.1.
+
+## 14. Exit criteria to close Phase 0
+CI green on `backend` (`./mvnw verify`, including `FoundationIT`), `docker-and-smoke` (build, start, smoke test, image scans) and `security-scan`,
+plus the unchanged `frontend`, `ml-service` and `infrastructure` jobs. Then replace sections 4, 6, 7 and 10 with the real results.
